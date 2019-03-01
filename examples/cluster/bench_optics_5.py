@@ -25,8 +25,6 @@ RES_DIR = 'res/bench_%d'%BENCH_ID
 if not os.path.exists(RES_DIR):
     os.makedirs(RES_DIR)
 
-n_points_per_cluster = 3
-d = 2 # data dimension
 # cluster of radius 0.1 centered on (0,0)
 C1 = [[0, 0], [0, 0.1], [0,-.1], [0.1,0]]
 # cluster of radius 1 center on (10,10)

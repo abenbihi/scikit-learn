@@ -619,7 +619,7 @@ def cluster_optics_xi(reachability, ordering, min_samples, min_cluster_size,
         smaller clusters.
     """
     print('min_cluster_size: %d'%min_cluster_size)
-    clusters = _xi_cluster(reachability[ordering], xi, min_samples,
+    clusters = fuck_xi_cluster(reachability[ordering], xi, min_samples,
                            min_cluster_size)
     labels = _extract_xi_labels(ordering, clusters)
     return labels, clusters
@@ -628,16 +628,12 @@ def cluster_optics_xi(reachability, ordering, min_samples, min_cluster_size,
 def _steep_upward(reachability_plot, p, ixi):
     """Check if point p is a xi steep up area (definition 9).
     ixi is the inverse xi, i.e. `1 - xi`"""
-    #print('\nupward', reachability_plot[p]/ reachability_plot[p + 1])
     return reachability_plot[p] <= reachability_plot[p + 1] * ixi
 
 
 def _steep_downward(reachability_plot, p, ixi):
     """Check if point p is a xi steep down area (definition 9).
     ixi is the inverse xi, i.e. `1 - xi`"""
-    #print('WARNING from Assia, I think the order is inversed')
-    #print('\ndownward', reachability_plot[p + 1] / reachability_plot[p])
-    #print(reachability_plot[p] * ixi >= reachability_plot[p + 1])
     return reachability_plot[p] * ixi >= reachability_plot[p + 1]
 
 
@@ -662,7 +658,7 @@ class _Area:
         the end of a steep down area and the current index. It is
         irrelevant for steep up areas.
     """
-    def __init__(self, start, end, maximum, mib):
+    def __init__(self, start, end, maximum, mib=0):
         self.start = start
         self.end = end
         # maximum is the beginning of a downward area
@@ -707,13 +703,14 @@ def _extend_downward(reachability_plot, start, ixi, min_samples, n_samples):
     end : integer
         The end of the downward region, which can be behind the index.
     """
+    print('\nFind the sda...')
     # print("extend down start")
     non_downward_points = 0
     index = start
     end = start
     # find a maximal downward area
     while index + 1 < n_samples:
-        # print("index", index)
+        print("index/n_samples: %d/%d"%(index,n_samples))
         # print("r", reachability_plot[index], "r + 1",
         #       reachability_plot[index + 1])
         index += 1
@@ -734,6 +731,7 @@ def _extend_downward(reachability_plot, start, ixi, min_samples, n_samples):
                 # print("non downward")
                 break
         else:
+            print('%d: reachability went up, stop the sda ...'%index)
             break
     # print("extend end")
     return index, end
@@ -776,9 +774,6 @@ def _extend_upward(reachability_plot, start, ixi, min_samples, n_samples):
     end = start
     # find a maximal upward area
     while index + 1 < n_samples:
-        # print("index", index)
-        # print("r", reachability_plot[index], "r + 1",
-        #       reachability_plot[index + 1])
         index += 1
         if _steep_upward(reachability_plot, index, ixi):
             # print("steep")
@@ -799,17 +794,148 @@ def _extend_upward(reachability_plot, start, ixi, min_samples, n_samples):
     return index, end
 
 
-def _update_fileter_sdas(sdas, mib, ixi):
+def _update_fileter_sdas(sdas, reach_d, ixi):
     """Update steep down areas (SDAs) using the new
     maximum in between (mib) value, and the given inverse xi, i.e. `1 - xi`
+    Args:
+        sdas: list of steep downward areas
+        reach_d: rechability distance of the current idx pt
     """
-    # maximum is the value at the start of the sda if steep down
-    # maximum is the value at the end of the sda if steep up
-    # filter out all sda which start * ixi is smaller than the globa mib
-    res = [sda for sda in sdas if mib <= sda.maximum * ixi]
-    for sda in res:
-        sda.mib = max(sda.mib, mib) # I don't know
+    # if 
+    # (reachability[current_idx] > than sda[start]*(1-xi) )
+    # (reachability[current_idx] > than uda[end]*(1-xi) )
+    # condition 3.b is violated so kill the the steep area
+    res = [sda for sda in sdas if reach_d <= sda.maximum * ixi]
     return res
+
+def fuck_xi_cluster(reachability_plot, xi, min_samples, min_cluster_size):
+
+    # all indices are inclusive (specially at the end)
+    n_samples = len(reachability_plot)
+    # add an inf to the end of reachability plot
+    # but process the data only until the last actual point
+    # this is fine since the last point is considered upward anyway
+    reachability_plot = np.array(reachability_plot)
+    reachability_plot = np.hstack((reachability_plot, np.inf))
+
+    if min_cluster_size <= 1:
+        min_cluster_size = max(2, min_cluster_size * n_samples)
+
+    ixi = 1 - xi
+    sdas = list() # steep down area
+    clusters = list()
+    index = int(0)
+    # global maximum between the end of the last steep (up or down) region found
+    # and the current index.
+
+    print('*** cluster_xi ***')
+    while index + 1 < n_samples:
+        input('\nprocess next point ...')
+        print('** index: %d ** '%index)
+        print("reach_d", reachability_plot[index])
+
+        # check if a steep downward area starts
+        if _steep_downward(reachability_plot, index, ixi):
+            print("%d: steep down pt - reach/mib: %.5f"
+                    %(index, reachability_plot[index])) 
+            sdas = _update_fileter_sdas(sdas, reachability_plot[index], ixi)
+            D_start = index
+            index, end = _extend_downward(reachability_plot, D_start, ixi,
+                                          min_samples, n_samples)
+            # reachability is decroissante between D_start and index
+            # it stops when:
+            # - either there are more than min_samples decreasing but not xi
+            # steep points
+            # - or reachability is going up in [index,index+1] 
+            D = _Area(start=D_start, end=end,
+                      maximum=reachability_plot[D_start]) 
+            print('new sda: %d -> %d, r(s_D)=%.3f' 
+                    %(D_start, end, reachability_plot[D_start]))
+            print('I add the down area to the sdas')
+            sdas.append(D)
+
+        elif _steep_upward(reachability_plot, index, ixi):
+            print("%d: steep up pt"%index)
+            sdas = _update_fileter_sdas(sdas, reachability_plot[index], ixi)
+            U_start = index
+            index, end = _extend_upward(reachability_plot, U_start, ixi,
+                                        min_samples, n_samples)
+            # reachability is croissante between U_start and index
+            # it stops when:
+            # - either there are more than min_samples increasing but not xi
+            # steep points
+            # - or reachability is going down in [index,index+1] 
+            U = _Area(start=U_start, end=end, maximum=reachability_plot[end])
+            print('new sua: %d -> %d, r(s_D)=%.3f'
+                    %(U_start, end, reachability_plot[end]))
+                               
+            input('Combine the sua with every sda and check if they can be valid clusters ...')
+            U_clusters = list()
+            for dd, D in enumerate(sdas):
+                s_D = D.start # s_D
+                e_D = D.end
+                s_U = U.start
+                e_U = min(U.end, n_samples - 1) # e_U
+                
+                # init the cluster limits
+                s = s_D
+                e = s_U
+
+                # at this point, cond. 1 and 2 are verified.
+                print('sda %d - potential cluster: [s, e]=[s_D,e_U]: %d -> %d'%(dd, s, e))
+
+                r_s_D = D.maximum
+                r_e_U = U.maximum
+                if U.end < n_samples - 1:
+                    r_e_U_p = reachability_plot[e_U+1]
+                else:
+                    r_e_U_p = reachability_plot[e_U]
+
+                # 4.b
+                # TODO: paper says  if r(s_D) * (1-\xi) >= r(e_{U+1})
+                # and you do:       if r(s_D) * (1-\xi) >= r(e_U)
+                if r_s_D * ixi >= r_e_U_p:
+                    # find the largest c_start in D so that r(c_start) > r(e_{U+1})
+                    # while r(c_start+1) > r(e_U), increase c_start
+                    while (reachability_plot[s + 1] > r_e_U_p and s <= e_D):
+                        s += 1
+                    print('4.b OK. if r(s_D) * (1-xi) >= r(e_U):')
+                    input('new cluster range: %d -> %d'%(s,e))
+                # 4.c if r(e_U)*ixi >= r(s_D) 
+                # TODO: the paper does if r(e_{U+1})*ixi >= r(s_D) 
+                elif r_e_U_p * ixi >= r_s_D:
+                    # find the lowest c_end in U so that r(c_end) < r(s_D) 
+                    while (reachability_plot[e] > D.maximum  and e < e_U):
+                        e += 1
+                    print('4.c OK. if r(e_U)*(1-xi) >= r(s_D):')
+                    input('new cluster range: %d -> %d'%(s,e))
+                # print('after 4', c_start, c_end)
+
+                #if _steep_upward(reachability_plot, index - 1, ixi):
+                #    c_end -= 1
+                # print('check last point', c_end, 'index', index)
+
+                # 3.a
+                if e - s + 1 < min_cluster_size:
+                    input('booo this cluster has %d/%d points'
+                            %(e - s + 1,min_cluster_size))
+                    continue
+                # print('min pts pass')
+
+                U_clusters.append((s,e))
+                input('yata ! you have a cluster %d -> %d'%(s,e))
+
+            # add smaller clusters first.
+            U_clusters.reverse()
+            clusters.extend(U_clusters)
+            # print("set of clusters:", clusters)
+
+        else:
+            # print("just else", index)
+            index += 1
+            sdas = _update_fileter_sdas(sdas, reachability_plot[index], ixi)
+
+    return clusters
 
 
 def _xi_cluster(reachability_plot, xi, min_samples, min_cluster_size):
@@ -886,13 +1012,13 @@ def _xi_cluster(reachability_plot, xi, min_samples, min_cluster_size):
             D = _Area(start=D_start, end=end,
                       maximum=reachability_plot[D_start], mib=0.)
             print('new sda: %d -> %d, r(s_D)=%.3f' 
-                    %(D_start, index, reachability_plot[D_start]))
+                    %(D_start, end, reachability_plot[D_start]))
             #if (D_start!=index):
             #    print('WTF: D_start!=index !!! Abort !')
             #    exit(1)
             # print("D", D, "r.s %.4g" % reachability_plot[D.start],
             #       "r.e %.4g" % reachability_plot[D.end])
-            print('I add the sown area to the sdas')
+            print('I add the down area to the sdas')
             sdas.append(D) 
             mib = reachability_plot[index] # TODO: it is supposed to be between the
             #end of the last steep (no matter whether up or down). And this
@@ -912,7 +1038,7 @@ def _xi_cluster(reachability_plot, xi, min_samples, min_cluster_size):
             U = _Area(start=U_start, end=end, maximum=reachability_plot[end],
                       mib=-1)
             print('new sua: %d -> %d, r(s_D)=%.3f'
-                    %(index, end, reachability_plot[end]))
+                    %(U_start, end, reachability_plot[end]))
             #if (U_start!=index):
             #    print('WTF: U_start!=index')
             #    exit(1)
@@ -926,7 +1052,7 @@ def _xi_cluster(reachability_plot, xi, min_samples, min_cluster_size):
             # print('mib %.4g' % mib)
             # print(sdas)
             
-            print('Combine the steep up region with every sdas and check if they can be valid clusters.')
+            input('Combine the sua with every sda and check if they can be valid clusters ...')
             U_clusters = list()
             for dd, D in enumerate(sdas):
                 c_start = D.start # s_D
@@ -937,9 +1063,13 @@ def _xi_cluster(reachability_plot, xi, min_samples, min_cluster_size):
                 # 3.b # wtf is this condition ?
                 # if  > (mib=r(e_U)) * (1 - \xi)
                 #if D.mib > mib * ixi: # TODO: I don't get this
-                #    print('this cluster failed the weird condition')
+                #    input('this cluster failed the weird condition')
                 #    continue
                 # print("3b pass")
+
+                if D.mib * ixi < mib:  # TODO: I don't get this
+                    input('this cluster failed the weird condition')
+                    continue
 
                 # 4
                 # 4.b
@@ -951,16 +1081,16 @@ def _xi_cluster(reachability_plot, xi, min_samples, min_cluster_size):
                     while (reachability_plot[c_start + 1] > U.maximum and c_start < c_end):
                         c_start += 1
                         # TODO: how does this ensure that c_start stays in D
-                    print('if r(s_D) * (1-xi) >= r(e_U):')
-                    print('\tnew cluster range: %d -> %d'%(c_start, c_end))
+                    print('4.b OK. if r(s_D) * (1-xi) >= r(e_U):')
+                    input('new cluster range: %d -> %d'%(c_start, c_end))
                 # 4.c if r(e_U)*ixi >= r(s_D) 
                 # TODO: the paper does if r(e_{U+1})*ixi >= r(s_D) 
                 elif U.maximum * ixi >= D.maximum:
                     # find the lowest c_end in U so that r(c_end) < r(s_D) 
                     while (reachability_plot[c_end - 1] > D.maximum  and c_end > c_start):
                         c_end -= 1
-                    print('if r(e_U)*(1-xi) >= r(s_D):')
-                    print('\tnew cluster range: %d -> %d'%(c_start, c_end))
+                    print('4.c OK. if r(e_U)*(1-xi) >= r(s_D):')
+                    input('new cluster range: %d -> %d'%(c_start, c_end))
                 # print('after 4', c_start, c_end)
 
                 if _steep_upward(reachability_plot, index - 1, ixi):
@@ -969,13 +1099,13 @@ def _xi_cluster(reachability_plot, xi, min_samples, min_cluster_size):
 
                 # 3.a
                 if c_end - c_start + 1 < min_cluster_size:
-                    print('booo this cluster has %d/%d points'
+                    input('booo this cluster has %d/%d points'
                             %(c_end-c_start+1,min_cluster_size))
                     continue
                 # print('min pts pass')
 
                 U_clusters.append((c_start, c_end))
-                print('yata ! you have a cluster %d -> %d'%(c_start, c_end))
+                input('yata ! you have a cluster %d -> %d'%(c_start, c_end))
                 # print('U clusters', U_clusters)
 
             # add smaller clusters first.
