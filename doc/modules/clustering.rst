@@ -869,6 +869,52 @@ the linear segment clusters of the reachability plot. Note that the blue and
 red clusters are adjacent in the reachability plot, and can be hierarchically
 represented as children of a larger parent cluster.
 
+With ``cluster_method='xi'`` (default), the user must tune the two parameters
+``min_samples`` and ``xi`` to extract the desired clusters. ``min_samples`` is
+the minimum number of neighbours at distance ``eps`` required for a point to be
+a cluster. ``xi`` defines the reachability factor change ``1/(1-xi)`` that
+signals the beginning or the end of a cluster. One empirical approach
+illustrated below is first to set the minimum ``min_samples`` that produces
+breaks at the desired locations on the reachability plot. Then, ``xi`` is
+gradually increased to filter out residual clusters. The plots below show the
+reachability plot, the steepness plot, the clustering output as well as the raw
+data. 
+
+.. |optics_param_min_samples| image:: ../auto_examples/cluster/images/sphx_glr_plot_optics_params_001.png
+        :target: ../auto_examples/cluster/plot_optics.html
+        :scale: 50
+
+.. centered:: |optics_param_min_samples|
+
+As previously described, the reachability plot is color-coded so that cluster
+colors in planar space match the the linear segment clusters of the
+reachability plot. It also shows the ``core_distances_`` (pink) of each point
+i.e. the minimum distance at which a point is a cluster for a fixed
+``min_samples``. The steepness plot shows the reachability change factor
+between a point and its neighbours (blue: left, red: right) in the reachability
+plot. A blue (resp. red) peak means the reachability significantly decreases
+(resp. increases).  The general idea is that a cluster starts at a blue peak,
+ends up at a red one, and both peaks must be higher than the ``xi`` level
+(green line). When ``min_samples`` is too small, the steepness plot is noisy
+and there is no significant peak. The more ``min_samples`` increases, the
+smoother it becomes and only the most significant peaks stay which correspond
+to the data clusters. It is recommended to choose the minimum ``min_samples``
+that produces the reachability plot with the desired breaks.
+
+.. |optics_param_xi| image:: ../auto_examples/cluster/images/sphx_glr_plot_optics_params_003.png
+        :target: ../auto_examples/cluster/plot_optics.html
+        :scale: 50
+
+.. centered:: |optics_param_xi|
+
+The user can then choose which cluster to keep by increasing the ``xi`` level
+defined (green). A small ``xi`` defines a small ``xi`` level and allows all
+peaks to define clusters which lead to many residual clusters (left plot). As
+``xi`` increases, these unwanted clusters are filtered out until only the
+significant ones stay (middle plot). When ``xi`` is too high (right plot), the
+peaks that could delimit relevant clusters are ignored and no cluster is
+extracted.
+
 .. topic:: Examples:
 
      * :ref:`sphx_glr_auto_examples_cluster_plot_optics.py`
